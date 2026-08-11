@@ -1,16 +1,26 @@
 .SILENT:
 
 CXX = g++
-CXXFLAGS = -Wall -std=c++17
+CXXFLAGS = -Wall -std=c++17 -g
 
-all: main
+COMPILER = main.cpp
+FILE_TO_COMPILE = test.c
+COMPILER_EXEC = main	
 
-main: main.o
-	$(CXX) $(CXXFLAGS) -o main main.o
+all: $(COMPILER_EXEC)
 
-main.o: main.cpp
-	$(CXX) $(CXXFLAGS) -c main.cpp
+run: $(COMPILER_EXEC)
+	./$(COMPILER_EXEC) $(FILE_TO_COMPILE)
 
-.PHONY: clean
+# Get an executable from the .o file
+$(COMPILER_EXEC): main.o
+	$(CXX) $(CXXFLAGS) -o $(COMPILER_EXEC) main.o
+
+# Compile the compiler to get a .o file
+main.o: $(COMPILER)
+	$(CXX) $(CXXFLAGS) -c $(COMPILER)
+
+
+.PHONY: all run clean
 clean:
-	@rm -f *.o main
+	rm -f *.o $(COMPILER_EXEC)

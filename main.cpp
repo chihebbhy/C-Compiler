@@ -12,16 +12,52 @@ enum class TokenType{
 
 	RETURN, INT, VOID,
 
+	IF, ELSE, WHILE, FOR, CHAR,
 	// literal
-	IDENTIFIER, INT_LITERAL,
+	IDENTIFIER, INT_LITERAL,FLOAT_LITERAL,CHAR_LITERAL,STRING_LITERAL,
 
+	// operators
+	PLUS,           // +
+	MINUS,          // -
+	STAR,           // *
+	SLASH,          // /
+	PERCENT,        // %
+
+	// Assignment
+	EQUAL,          // =
+	PLUS_EQUAL,     // +=
+	MINUS_EQUAL,    // -=
+	STAR_EQUAL,     // *=
+	SLASH_EQUAL,    // /=
+	PERCENT_EQUAL,  // %=
+
+	// Comparison
+	EQUAL_EQUAL,    // ==
+	NOT_EQUAL,      // !=
+	LESS,           // <
+	LESS_EQUAL,     // <=
+	GREATER,        // >
+	GREATER_EQUAL,  // >=
+
+	// Logic
+	AND_AND,        // &&
+	OR_OR,          // ||
+	NOT,            // !
 	// 2 arguments
 	LEFT_BRACKET, RIGHT_BRACKET, // [  ]
 	LEFT_PAREN, RIGHT_PAREN, //     (  )
 	LEFT_BRACE, RIGHT_BRACE, //     {  }
+	COMMA,          // ,
 
+	// Struct/member access
+	DOT,            // .
+	//ARROW,          // ->
 
-	SEMICOLON
+	COLON,          // :
+	QUESTION,       // ?
+
+	SEMICOLON,
+	END_OF_FILE
 };
 
 class Token{
