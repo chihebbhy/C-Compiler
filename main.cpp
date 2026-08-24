@@ -33,11 +33,16 @@ int main(int argc, char* argv[]){
 
 	// Separator
 	std::cout << std::endl << "------------------------------" << std::endl;
+
+
+
 	// Parser
 	Parser parser(Tokens);
-	auto ast = parser.parse_statement();
-	print_ast(ast.get());
-	
+	auto ast = parser.parse_program();
+	for (const auto& what : ast) {
+		print_ast(what.get());
+		std::cout << "---- next ----" << std::endl;
+	}
 
 
 	return 0;

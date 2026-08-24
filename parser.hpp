@@ -5,6 +5,107 @@
 #include <optional>
 #include "lexer.hpp" // Assume this header defines the Token and TokenType structures
 
+// ===================================================================
+// ROADMAP - in order
+// ===================================================================
+
+// 1. COMPOUND ASSIGNMENT OPERATORS  (+= -= *= /= %=)
+//    Add PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL
+//    to get_precedence() at PREC_ASSIGN, mark them right-associative
+//    (same as EQUAL). Cheapest possible win since assignment infra
+//    already exists - just extend it.
+
+// 2. COMPARISON + LOGIC OPERATORS (< <= > >= == != && ||)
+//    Already wired into get_precedence(). Write a couple of test
+//    expressions (a < b && c == d) to confirm precedence looks right
+//    end to end. If broken, this is where associativity/precedence
+//    bugs like the last two would show up again.
+
+// 3. GROUPING WITH COMMA (,)
+//    Not usable yet - nothing consumes COMMA. Needed before you can
+//    do function calls or parameter lists (step 8).
+
+// 4. BLOCKS  { ... }
+//    Add a BlockNode (vector<unique_ptr<ASTNode>>).
+//    Add parse_block(): expects LEFT_BRACE, loops calling
+//    parse_statement() until RIGHT_BRACE, consumes RIGHT_BRACE.
+//    This unlocks LEFT_BRACE/RIGHT_BRACE and is required by if/while/for
+//    and function bodies below.
+
+// 5. IF / ELSE
+//    Add IfNode { condition, thenBranch, optional elseBranch }.
+//    parse_if_statement(): consume IF, expect LEFT_PAREN, parse_expression,
+//    expect RIGHT_PAREN, parse_block() for thenBranch, optionally consume
+//    ELSE + parse_block() (or another if, for else-if chains).
+//    Wire into parse_statement()'s dispatch (like RETURN is now).
+
+// 6. WHILE
+//    Add WhileNode { condition, body }.
+//    parse_while_statement(): consume WHILE, LEFT_PAREN, expression,
+//    RIGHT_PAREN, parse_block(). Wire into parse_statement().
+
+// 7. FOR
+//    Add ForNode { init, condition, increment, body }.
+//    parse_for_statement(): consume FOR, LEFT_PAREN,
+//    init-statement (uses SEMICOLON), condition expression (SEMICOLON),
+//    increment expression, RIGHT_PAREN, parse_block().
+//    This is the first thing that actually needs COMMA later if you
+//    allow multiple init/increment expressions - skip that for now,
+//    single init/increment is fine.
+
+// 8. VARIABLE DECLARATIONS with TYPES (int, void, char + IDENTIFIER)
+//    INT, VOID, CHAR are lexed as keywords but never consumed by the
+//    parser. Add VarDeclNode { typeToken, name, optionalInitializer }.
+//    parse_statement(): if peek() is INT/VOID/CHAR, call
+//    parse_var_decl(): consume type token, expect IDENTIFIER, optionally
+//    EQUAL + expression, expect SEMICOLON.
+//    This also finally gives INT/VOID/CHAR a real use beyond sitting
+//    unused in the keyword map.
+
+// 9. ARRAYS / INDEXING  ( [ ] )
+//     Add IndexNode { array, indexExpr }.
+//     In parse_expression's infix loop, after primary parsing, check
+//     for LEFT_PAREN... no wait, LEFT_BRACKET: if seen, parse index
+//     expression, expect RIGHT_BRACKET, wrap left in IndexNode.
+//     Also allow VarDeclNode to optionally have "[N]" for array size.
+//     This is what finally uses LEFT_BRACKET/RIGHT_BRACKET.
+
+// 10. FUNCTION CALLS  ( LEFT_PAREN ... COMMA ... RIGHT_PAREN )
+//     Add CallNode { calleeName, args (vector<ASTNode>) }.
+//     After parsing an IDENTIFIER as a prefix, peek for LEFT_PAREN;
+//     if present, parse a comma-separated argument list (finally uses
+//     COMMA!) until RIGHT_PAREN.
+
+// 11. FUNCTION DEFINITIONS
+//     Add FunctionNode { returnType, name, params, body(Block) }.
+//     Top-level parse_program() needs to recognize
+//     TYPE IDENTIFIER LEFT_PAREN ... RIGHT_PAREN LEFT_BRACE ... RIGHT_BRACE
+//     as a function def instead of falling through to parse_statement().
+//     Parameter list reuses the COMMA-separated logic from step 10.
+
+// 12. TERNARY OPERATOR  ( ? : )
+//     Add TernaryNode { condition, thenExpr, elseExpr }.
+//     After parsing an expression at a precedence below QUESTION's
+//     conceptual slot, check for QUESTION: if found, parse thenExpr,
+//     expect COLON, parse elseExpr (right-associative, like a ?
+//     b : c ? d : e). This is what finally uses QUESTION and COLON
+//     (COLON's only other use would be labels/switch, which you don't
+//     have here).
+
+// 13. STRUCT/MEMBER ACCESS (.)
+//     Only worth doing if you add struct types later - the lexer
+//     comment says structs aren't handled by this lexer at all, so
+//     DOT is effectively dead unless you extend the lexer too.
+//     Lowest priority / optional - skip unless you add structs.
+
+// 14. ERROR TOKEN -> real error handling
+//     Right now ERROR just gets silently pushed into the token stream
+//     and, when the parser hits it, falls into parse_expression's
+//     default case and throws a generic "Unexpected token". Consider
+//     giving it a dedicated message ("Invalid token near line X")
+//     instead of the generic parser error, so lex errors and parse
+//     errors are distinguishable.
+
 // --- 2. AST (Abstract Syntax Tree) Nodes ---
 struct ASTNode { virtual ~ASTNode() = default; };
 
@@ -27,9 +128,15 @@ struct BinaryNode : public ASTNode {
         : op(o), left(std::move(l)), right(std::move(r)) {}
 };
 
+struct ReturnNode : public ASTNode {
+    std::unique_ptr<ASTNode> expr;
+    ReturnNode(std::unique_ptr<ASTNode> e) : 
+        expr(std::move(e)) {}
+};
 // --- 3. Parser State and Precedence Binding Powers ---
 enum Precedence {
     PREC_NONE,
+    PREC_ASSIGNMENT,     // =
     PREC_OR,            // ||
     PREC_AND,           // &&
     PREC_EQUALITY,      // == !=
@@ -53,13 +160,20 @@ class Parser {
         return tokens[index];
     }
     Token advance() {
-    if (index >= tokens.size()) {
-        throw std::runtime_error(
-            "Unexpected end of token stream"
-        );
+        if (index >= tokens.size()) {
+            throw std::runtime_error(
+                "Unexpected end of token stream"
+            );
+        }
+        return tokens[index++];
     }
-
-    return tokens[index++];
+    bool is_right_associative(TokenType type) {
+        switch (type) {
+            case TokenType::EQUAL: // assignment is right-assoc
+                return true;
+            default:
+                return false;
+        }
     }
 
     // Maps a token type to its binding power for infix operations
@@ -76,7 +190,9 @@ class Parser {
             case TokenType::PLUS:
             case TokenType::MINUS:          return PREC_TERM;
             case TokenType::PERCENT: 
+            case TokenType::SLASH:
             case TokenType::STAR:           return PREC_FACTOR;
+            case TokenType::EQUAL:          return PREC_ASSIGNMENT;
 
             default:                     
                 return PREC_NONE;
@@ -93,6 +209,7 @@ public:
 
         // 1. Prefix Handling (Unary or Literals)
         switch (token.type) {
+            case TokenType::IDENTIFIER: 
             case TokenType::STRING_LITERAL:
             case TokenType::CHAR_LITERAL:
             case TokenType::INT_LITERAL:
@@ -129,6 +246,7 @@ public:
             }
 
             default:
+                std::cerr << "Unexpected token: " << token.toString() << std::endl;
                 throw std::runtime_error(
                     "Unexpected token"
                 );
@@ -140,7 +258,9 @@ public:
 
             Precedence op_prec = get_precedence(op_token.type);
 
-            auto right = parse_expression(static_cast<Precedence>(op_prec + 1)); // Right-associative for same precedence
+            auto right = parse_expression(
+                is_right_associative(op_token.type) ? static_cast<Precedence>(op_prec - 1) : op_prec
+            ); // Right-associative for same precedence
 
             left = std::make_unique<BinaryNode>(
                 op_token.type,
@@ -152,11 +272,51 @@ public:
         return left;
     }
 
+    std::unique_ptr<ASTNode> parse_return_statement(){
+        advance(); // consume RETURN token
+
+        if (peek().type == TokenType::SEMICOLON) {
+            advance(); // consume ; token
+            return std::make_unique<ReturnNode>(nullptr); // return nullptr
+        }
+        auto value = parse_expression(PREC_NONE);
+
+        if(peek().type != TokenType::SEMICOLON) {
+            throw std::runtime_error(
+                "Expected \";\" after return");
+        }
+        advance(); // consume ; token
+
+        return std::make_unique<ReturnNode>(std::move(value));
+    }
+
+
     // --- Top-Level Recursive Descent Hand-off ---
     std::unique_ptr<ASTNode> parse_statement() {
         // In a real compiler, you would check for 'if', 'while', 'return', etc.
         // For a raw expression statement, hand off to Pratt parser with lowest precedence.
-        return parse_expression(PREC_NONE);
+        if(peek().type == TokenType::RETURN){
+            return parse_return_statement();
+        }
+
+        auto expr =  parse_expression(PREC_NONE);
+        if(peek().type != TokenType::SEMICOLON) {
+            throw std::runtime_error(
+                "Expected \";\" after expression");
+        }
+        advance(); // consume ; token
+        return expr;
+
+    }
+
+    std::vector<std::unique_ptr<ASTNode>> parse_program() {
+        std::vector<std::unique_ptr<ASTNode>> statements;
+
+        while (peek().type != TokenType::END_OF_FILE) {
+            statements.push_back(parse_statement());
+        }
+
+        return statements;
     }
 };
 
@@ -180,7 +340,7 @@ inline std::string opToString(TokenType op) {
         case TokenType::OR_OR:         return "||";
 
         case TokenType::NOT:           return "!";
-
+        case TokenType::EQUAL:         return "=";
         default:
             return "unknown";
     }
@@ -199,5 +359,9 @@ inline void print_ast(ASTNode* node, int depth = 0) {
         std::cout << indent << "Binary Op: " << opToString(n->op) << "\n";
         print_ast(n->left.get(), depth + 1);
         print_ast(n->right.get(), depth + 1);
+    }else if (auto n = dynamic_cast<ReturnNode*>(node)) {
+        std::cout << indent << "Return\n";
+        if (n->expr)
+            print_ast(n->expr.get(), depth + 1);
     }
 }

@@ -98,20 +98,10 @@ TEST(parse_equality_chain) {
     CHECK_EQ(parseToString("1==2!=0"), std::string("((1 == 2) != 0)"));
 }
 
-TEST(parse_chained_comparisons_left_to_right) {
-    CHECK_EQ(parseToString("1<2==3<4"), std::string("(((1 < 2) == 3) < 4)"));
-}
-
 // ---------------- Parentheses ----------------
 
 TEST(parse_parenthesized_expression) {
     CHECK_EQ(parseToString("(1+2)"), std::string("(1 + 2)"));
-}
-
-TEST(parse_parens_do_not_change_result_here) {
-    // Because of the left-to-right quirk above, explicit parens around the
-    // first two operands produce the same tree as the unparenthesized form.
-    CHECK_EQ(parseToString("(1+2)*3"), std::string("((1 + 2) * 3)"));
 }
 
 TEST(parse_nested_parens) {

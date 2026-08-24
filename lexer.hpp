@@ -69,11 +69,23 @@ enum class TokenType{
 	END_OF_FILE // 						
 };
 
+// forward declarations
+std::string_view tokenTypeToString(TokenType type);
+
 class Token{
 	public:
 		TokenType type;
 		std::optional<std::string> lexeme;
 		int line;
+
+		std::string toString(){
+			std::string result = "TokenType: " + std::string(tokenTypeToString(type));
+			if(lexeme.has_value()){
+				result += ", Lexeme: " + *lexeme;
+			}
+			result += ", Line: " + std::to_string(line);
+			return result;
+		}
 };
 
 class Lexer{
