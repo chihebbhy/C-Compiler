@@ -78,7 +78,7 @@ class Token{
 		std::optional<std::string> lexeme;
 		int line;
 
-		std::string toString(){
+		std::string toString() const {
 			std::string result = "TokenType: " + std::string(tokenTypeToString(type));
 			if(lexeme.has_value()){
 				result += ", Lexeme: " + *lexeme;

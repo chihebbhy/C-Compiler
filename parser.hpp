@@ -9,12 +9,14 @@
 // ROADMAP - in order
 // ===================================================================
 
+//    ---- DONE ----
 // 1. COMPOUND ASSIGNMENT OPERATORS  (+= -= *= /= %=)
 //    Add PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL
 //    to get_precedence() at PREC_ASSIGN, mark them right-associative
 //    (same as EQUAL). Cheapest possible win since assignment infra
 //    already exists - just extend it.
 
+//    ---- DONE ----
 // 2. COMPARISON + LOGIC OPERATORS (< <= > >= == != && ||)
 //    Already wired into get_precedence(). Write a couple of test
 //    expressions (a < b && c == d) to confirm precedence looks right
@@ -25,6 +27,7 @@
 //    Not usable yet - nothing consumes COMMA. Needed before you can
 //    do function calls or parameter lists (step 8).
 
+//    ---- DONE ----
 // 4. BLOCKS  { ... }
 //    Add a BlockNode (vector<unique_ptr<ASTNode>>).
 //    Add parse_block(): expects LEFT_BRACE, loops calling
@@ -133,6 +136,10 @@ struct ReturnNode : public ASTNode {
     ReturnNode(std::unique_ptr<ASTNode> e) : 
         expr(std::move(e)) {}
 };
+
+struct BlockNode : public ASTNode {
+    std::vector<std::unique_ptr<ASTNode>> statements;
+};
 // --- 3. Parser State and Precedence Binding Powers ---
 enum Precedence {
     PREC_NONE,
@@ -170,6 +177,11 @@ class Parser {
     bool is_right_associative(TokenType type) {
         switch (type) {
             case TokenType::EQUAL: // assignment is right-assoc
+            case TokenType::PLUS_EQUAL:
+            case TokenType::MINUS_EQUAL:
+            case TokenType::STAR_EQUAL:
+            case TokenType::SLASH_EQUAL:
+            case TokenType::PERCENT_EQUAL:
                 return true;
             default:
                 return false;
@@ -180,19 +192,30 @@ class Parser {
     Precedence get_precedence(TokenType type) {
         switch (type) {
             case TokenType::AND_AND:        return PREC_AND;
+
             case TokenType::OR_OR:          return PREC_OR;
+
             case TokenType::EQUAL_EQUAL:      
             case TokenType::NOT_EQUAL:      return PREC_EQUALITY;
+
             case TokenType::LESS:      
             case TokenType::LESS_EQUAL:
             case TokenType::GREATER:   
             case TokenType::GREATER_EQUAL:  return PREC_COMPARISON;
+
             case TokenType::PLUS:
             case TokenType::MINUS:          return PREC_TERM;
+
             case TokenType::PERCENT: 
             case TokenType::SLASH:
             case TokenType::STAR:           return PREC_FACTOR;
-            case TokenType::EQUAL:          return PREC_ASSIGNMENT;
+
+            case TokenType::EQUAL:          
+            case TokenType::PLUS_EQUAL:
+            case TokenType::MINUS_EQUAL:
+            case TokenType::STAR_EQUAL:
+            case TokenType::SLASH_EQUAL:
+            case TokenType::PERCENT_EQUAL:  return PREC_ASSIGNMENT;
 
             default:                     
                 return PREC_NONE;
@@ -290,6 +313,15 @@ public:
         return std::make_unique<ReturnNode>(std::move(value));
     }
 
+    std::unique_ptr<ASTNode> parse_block(){
+        advance(); // consume {
+        std::unique_ptr<BlockNode> block = std::make_unique<BlockNode>();
+        while(peek().type != TokenType::RIGHT_BRACE){
+            block->statements.push_back(parse_statement());
+        }
+        advance(); // consume }
+        return block;
+    }
 
     // --- Top-Level Recursive Descent Hand-off ---
     std::unique_ptr<ASTNode> parse_statement() {
@@ -299,6 +331,9 @@ public:
             return parse_return_statement();
         }
 
+        if(peek().type == TokenType::LEFT_BRACE){
+            return parse_block();
+        }
         auto expr =  parse_expression(PREC_NONE);
         if(peek().type != TokenType::SEMICOLON) {
             throw std::runtime_error(
@@ -320,6 +355,8 @@ public:
     }
 };
 
+
+
 inline std::string opToString(TokenType op) {
     switch (op) {
         case TokenType::PLUS:          return "+";
@@ -340,7 +377,13 @@ inline std::string opToString(TokenType op) {
         case TokenType::OR_OR:         return "||";
 
         case TokenType::NOT:           return "!";
+
         case TokenType::EQUAL:         return "=";
+        case TokenType::PLUS_EQUAL:    return "+=";
+        case TokenType::MINUS_EQUAL:   return "-=";
+        case TokenType::STAR_EQUAL:    return "*=";
+        case TokenType::SLASH_EQUAL:   return "/=";
+        case TokenType::PERCENT_EQUAL: return "%=";
         default:
             return "unknown";
     }
@@ -363,5 +406,10 @@ inline void print_ast(ASTNode* node, int depth = 0) {
         std::cout << indent << "Return\n";
         if (n->expr)
             print_ast(n->expr.get(), depth + 1);
+    }else if (auto n = dynamic_cast<BlockNode*>(node)) {
+        std::cout << indent << "Block" << std::endl;
+        for(const auto& stt: n->statements){
+            print_ast(stt.get(), depth + 1);
+        }
     }
 }
